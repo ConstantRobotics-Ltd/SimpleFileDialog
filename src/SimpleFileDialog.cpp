@@ -17,7 +17,7 @@ std::string cr::utils::SimpleFileDialog::dialog()
     FILE *f = popen("zenity --file-selection", "r");
     fgets(filename, 1024, f);
     filename[strlen(filename) - 1] = 0;
-    string file(filename);
+    std::string file(filename);
     return file;
 #else
     IFileOpenDialog* pFileOpen = nullptr;

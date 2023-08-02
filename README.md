@@ -1,22 +1,29 @@
 ![frame_logo](_static/file_dialog_logo.png)
 
+
+
 # **Simple file dialog C++ library**
 
-**v1.0.0**
+**v1.0.1** 
 
-------
+
 
 # Overview
 
 **SimpleFileDialog** C++ library provides simple dialog to chose file in Windows and Linux (tested for Ubuntu 22.04, 22.10 and Windows 11). The library used in projects when simple file chose dialog needed. To provide dialog in Linux the library calls "**zenity**" application. The library doesn't have third-party dependencies. **SimpleFileDialog.h** file includes declaration of **SimpleFileDialog** class. **SimpleFileDialog** class includes only one simple static method **dialod()**;
 
+
+
 # Versions
 
 **Table 1** - Library versions.
 
-| Version | Release date | What's new     |
-| ------- | ------------ | -------------- |
-| 1.0.0   | 20.07.2023   | First version. |
+| Version | Release date | What's new                                     |
+| ------- | ------------ | ---------------------------------------------- |
+| 1.0.0   | 20.07.2023   | First version.                                 |
+| 1.0.1   | 02.08.2023   | - Fixed std::string compiling error for Linux. |
+
+
 
 # Class description
 
@@ -53,6 +60,8 @@ int main(void)
     return -1;
 }
 ```
+
+
 
 # Build and connect to your project
 

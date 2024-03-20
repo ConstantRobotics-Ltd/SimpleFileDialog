@@ -1,16 +1,26 @@
-![frame_logo](_static/file_dialog_logo.png)
+![simplefiledialog_logo](_static/simplefiledialog_web_logo.png)
 
 
 
 # **Simple file dialog C++ library**
 
-**v1.0.1** 
+**v1.0.3**
+
+
+
+# Table of contents
+
+- [Overview](#overview)
+- [Versions](#versions)
+- [Library files](#library-files)
+- [Class declaration](#class-declaration)
+- [Build and connect to your project](#build-and-connect-to-your-project)
 
 
 
 # Overview
 
-**SimpleFileDialog** C++ library provides simple dialog to chose file in Windows and Linux (tested for Ubuntu 22.04, 22.10 and Windows 11). The library used in projects when simple file chose dialog needed. To provide dialog in Linux the library calls "**zenity**" application. The library doesn't have third-party dependencies. **SimpleFileDialog.h** file includes declaration of **SimpleFileDialog** class. **SimpleFileDialog** class includes only one simple static method **dialod()**;
+**SimpleFileDialog** C++ library provides simple dialog to chose file in Windows and Linux (tested for Ubuntu 22.04, 22.10 and Windows 11). The library used in projects when simple file chose dialog needed. To provide dialog in Linux the library calls "**zenity**" application. The library uses C++17 standard and doesn't have third-party dependencies. **SimpleFileDialog.h** file includes declaration of **SimpleFileDialog** class. **SimpleFileDialog** class includes only one simple static method **dialod()**.
 
 
 
@@ -21,19 +31,34 @@
 | Version | Release date | What's new                                     |
 | ------- | ------------ | ---------------------------------------------- |
 | 1.0.0   | 20.07.2023   | First version.                                 |
-| 1.0.1   | 02.08.2023   | - Fixed std::string compiling error for Linux. |
+| 1.0.2   | 02.08.2023   | - Fixed std::string compiling error for Linux. |
+| 1.0.3   | 20.03.2024   | - Documentation updated. |
 
 
 
-# Class description
+# Library files
+
+The library is supplied only by source code. The user is given a set of files in the form of a CMake project (repository). The repository structure is shown below:
+
+```xml
+CMakeLists.txt -------------------- Main CMake file of the library.
+src ------------------------------- Folder with library source code.
+    SimpleFileDialog.cpp ---------- C++ implementation file.
+    SimpleFileDialog.h ------------ Library main header file.
+    SimpleFileDialogVersion.h ----- Header file with library version.
+    SimpleFileDialogVersion.h.in -- Service CMake file to generate version file.
+test ------------------------------ Folder of the test application.
+    CMakeLists.txt ---------------- CMake file of the test application.
+    main.cpp ---------------------- Source C++ file of the test application.
+```
+
+
+
+# Class declaration
 
 **SimpleDileDialog** class declared in **SimpleFileDialog.h** file. Class declaration:
 
 ```cpp
-namespace cr
-{
-namespace utils
-{
 /// @brief File dialog class.
 class SimpleFileDialog
 {
@@ -41,11 +66,9 @@ public:
     /// @brief Dialog function.
     static std::string dialog();
 };
-}
-}
 ```
 
-**SimpleFileDialog** class includes only one static method **dialog()** which shows file chose dialog to user. Method used without **SimpleFileDialog** class instance. Example:
+**SimpleFileDialog** class includes only one static method **dialog()** which shows file chose dialog to user. The **dialog()** method returns string of file name. If file not chosen the method will return empty string **""**. Method used without **SimpleFileDialog** class instance. Example:
 
 ```cpp
 #include <iostream>

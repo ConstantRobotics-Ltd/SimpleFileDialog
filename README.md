@@ -2,7 +2,7 @@
 
 
 
-# **Simple file dialog C++ library**
+# **SimpleFileDialog C++ library**
 
 **v1.0.5**
 

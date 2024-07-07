@@ -11,11 +11,12 @@ namespace utils
 class SimpleFileDialog
 {
 public:
-    /// @brief Dialog function.
+
+    /**
+     * @brief Dialog function.
+     * @return String of file name or empty string if no file selected.
+     */
     static std::string dialog();
 };
 }
 }
-
-
-

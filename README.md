@@ -4,7 +4,7 @@
 
 # **Simple file dialog C++ library**
 
-**v1.0.4**
+**v1.0.5**
 
 
 
@@ -20,7 +20,7 @@
 
 # Overview
 
-**SimpleFileDialog** C++ library provides simple dialog to chose file in Windows and Linux (tested for Ubuntu 22.04, 22.10 and Windows 11). The library used in projects when simple file chose dialog needed. To provide dialog in Linux the library calls "**zenity**" application. The library uses C++17 standard and doesn't have third-party dependencies. **SimpleFileDialog.h** file includes declaration of **SimpleFileDialog** class. **SimpleFileDialog** class includes only one simple static method **dialod()**. The library is licensed under the **Apache 2.0** license.
+**SimpleFileDialog** C++ library provides simple dialog to chose file in Windows and Linux (tested for Ubuntu 22.04, 22.10 and Windows 11). The library used in projects when simple file chose dialog needed. To provide dialog in Linux the library calls "**zenity**" application. The library uses C++17 standard and doesn't have third-party dependencies. **SimpleFileDialog.h** file includes declaration of **SimpleFileDialog** class. **SimpleFileDialog** class includes only one simple static method **dialog()**. The library is licensed under the **Apache 2.0** license.
 
 
 
@@ -34,6 +34,7 @@
 | 1.0.2   | 02.08.2023   | - Fixed std::string compiling error for Linux. |
 | 1.0.3   | 20.03.2024   | - Documentation updated.                       |
 | 1.0.4   | 17.05.2024   | - Documentation updated.                       |
+| 1.0.5   | 07.07.2024   | - CMake updated.                               |
 
 
 
@@ -60,6 +61,10 @@ test ------------------------------ Folder of the test application.
 **SimpleDileDialog** class declared in **SimpleFileDialog.h** file. Class declaration:
 
 ```cpp
+namespace cr
+{
+namespace utils
+{
 /// @brief File dialog class.
 class SimpleFileDialog
 {
@@ -67,6 +72,8 @@ public:
     /// @brief Dialog function.
     static std::string dialog();
 };
+}
+}
 ```
 
 **SimpleFileDialog** class includes only one static method **dialog()** which shows file chose dialog to user. The **dialog()** method returns string of file name. If file not chosen the method will return empty string **""**. Method used without **SimpleFileDialog** class instance. Example:
@@ -117,7 +124,7 @@ cd <your respository folder>
 git submodule add https://github.com/ConstantRobotics-Ltd/SimpleFileDialog.git 3rdparty/SimpleFileDialog
 ```
 
-In you repository folder will be created folder **3rdparty/SimpleFileDialog** which contains all library files. New structure of your repository:
+In you repository folder will be created folder **3rdparty/SimpleFileDialog** which contains all library files. Also you can copy **SimpleFileDialog** repository folder to **3rdparty** folder of your repository. New structure of your repository:
 
 ```bash
 CMakeLists.txt
@@ -168,7 +175,7 @@ if (${PARENT}_SUBMODULE_SIMPLE_FILE_DIALOG)
 endif()
 ```
 
-File **3rdparty/CMakeLists.txt** adds folder **SimpleFileDialog** to your project and excludes test application (SimpleFileDialog class test applications) from compiling. Your repository new structure will be:
+File **3rdparty/CMakeLists.txt** adds folder **SimpleFileDialog** to your project and excludes test application (SimpleFileDialog class test applications) from compiling (by default test application excluded from compiling if SimpleFileDialog included as sub-repository). Your repository new structure will be:
 
 ```bash
 CMakeLists.txt

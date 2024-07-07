@@ -23,6 +23,11 @@ else()
     SET(REWRITE_FORCE "")
 endif()
 
+# Set default Release mode if not specified
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type defaulting to Release" FORCE)
+endif()
+
 
 
 ################################################################################
@@ -30,7 +35,13 @@ endif()
 ## project configuration
 ################################################################################
 SET(${PARENT}_SIMPLE_FILE_DIALOG             ON  CACHE BOOL "" ${REWRITE_FORCE})
-SET(${PARENT}_SIMPLE_FILE_DIALOG_TEST        ON  CACHE BOOL "" ${REWRITE_FORCE})
+if(NOT CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    SET(${PARENT}_SIMPLE_FILE_DIALOG_TEST    OFF CACHE BOOL "" ${REWRITE_FORCE})
+    message("${PROJECT_NAME} included as subrepository")
+else()
+    SET(${PARENT}_SIMPLE_FILE_DIALOG_TEST    ON CACHE BOOL "" ${REWRITE_FORCE})
+    message("${PROJECT_NAME} is stand alone repository")
+endif()
 
 
 

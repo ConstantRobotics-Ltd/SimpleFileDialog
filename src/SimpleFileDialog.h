@@ -14,9 +14,10 @@ public:
 
     /**
      * @brief Dialog function.
+     * @param title Dialog title. Defaults to "Select a file".
      * @return String of file name or empty string if no file selected.
      */
-    static std::string dialog();
+    static std::string dialog(const std::string title = "Select a file");
 };
 }
 }

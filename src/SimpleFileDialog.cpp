@@ -104,7 +104,7 @@ int onResponse(sd_bus_message* m, void* userdata, sd_bus_error*)
  * @return TRUE if dialog was shown and closed by user (file chosen or
  * cancelled), FALSE if portal is not available or failed to show dialog.
  */
-bool portalDialog(std::string& file)
+bool portalDialog(std::string& file, const std::string &title)
 {
     sd_bus* bus = nullptr;
     if (sd_bus_open_user(&bus) < 0)
@@ -140,7 +140,7 @@ bool portalDialog(std::string& file)
         r = sd_bus_call_method(bus, "org.freedesktop.portal.Desktop",
                                "/org/freedesktop/portal/desktop",
                                "org.freedesktop.portal.FileChooser", "OpenFile",
-                               nullptr, &reply, "ssa{sv}", "", "Open file",
+                               nullptr, &reply, "ssa{sv}", "", title.c_str(),
                                1, "handle_token", "s", token.c_str());
 
     // Old portal versions ignore handle_token and return other request path.
@@ -178,14 +178,34 @@ bool portalDialog(std::string& file)
 
 
 /**
+ * @brief Quote string to pass it to shell as single argument.
+ * @param str Any string.
+ * @return String in single quotes, each ' replaced by '\''.
+ */
+std::string shellQuote(const std::string& str)
+{
+    std::string quoted = "'";
+    for (char c : str)
+    {
+        if (c == '\'')
+            quoted += "'\\''";
+        else
+            quoted += c;
+    }
+    quoted += "'";
+    return quoted;
+}
+
+
+
+/**
  * @brief Check if program is available (can be found by "which" in PATH).
- * @param program Program name. Passed to shell as is, must not contain
- * special shell characters.
+ * @param program Program name.
  * @return TRUE if program found, FALSE otherwise.
  */
 bool checkProgram(const std::string& program)
 {
-    const std::string command = "which " + program;
+    const std::string command = "which " + shellQuote(program);
     char* const argv[] = {(char*)"/bin/sh", (char*)"-c",
                           (char*)command.c_str(), nullptr};
 
@@ -218,12 +238,12 @@ bool checkProgram(const std::string& program)
  * @return TRUE if dialog was shown and closed by user (file chosen or
  * cancelled), FALSE if portal is not available or failed to show dialog.
  */
-bool zenityDialog(std::string& file)
+bool zenityDialog(std::string& file, const std::string &title)
 {
     if (!checkProgram("zenity"))
         return false;
 
-    FILE* f = popen("zenity --file-selection", "r");
+    FILE* f = popen(("zenity --file-selection --title " + shellQuote(title)).c_str(), "r");
     if (f == nullptr)
         return false;
 
@@ -241,12 +261,12 @@ bool zenityDialog(std::string& file)
 
 
 
-bool kdialogDialog(std::string& file)
+bool kdialogDialog(std::string& file, const std::string &title)
 {
     if (!checkProgram("kdialog"))
         return false;
 
-    FILE* f = popen("kdialog --getopenfilename", "r");
+    FILE* f = popen(("kdialog --getopenfilename --title " + shellQuote(title)).c_str(), "r");
     if (f == nullptr)
         return false;
 
@@ -271,12 +291,12 @@ std::string cr::utils::SimpleFileDialog::dialog(const std::string title)
 #if defined(linux) || defined(__linux) || defined(__linux__)
     std::string file;
 #if SIMPLE_FILE_DIALOG_SD_BUS
-    if (portalDialog(file))
+    if (portalDialog(file, title))
         return file;
 #endif
-    if (zenityDialog(file))
+    if (zenityDialog(file, title))
         return file;
-    if (kdialogDialog(file))
+    if (kdialogDialog(file, title))
         return file;
     return "";
 #else
@@ -294,7 +314,14 @@ std::string cr::utils::SimpleFileDialog::dialog(const std::string title)
                               (void**)&pFileOpen);
         if (SUCCEEDED(hr))
         {
-            pFileOpen->SetTitle(L"OPEN VIDEO FILE");
+            // Title in the same code page as returned file name (CP_ACP).
+            int length = MultiByteToWideChar(CP_ACP, 0, title.c_str(), -1,
+                                             NULL, 0);
+            std::wstring wideTitle((size_t)(length > 0 ? length : 0), L'\0');
+            if (length > 0)
+                MultiByteToWideChar(CP_ACP, 0, title.c_str(), -1,
+                                    &wideTitle[0], length);
+            pFileOpen->SetTitle(wideTitle.c_str());
             hr = pFileOpen->Show(NULL);
             if (SUCCEEDED(hr))
             {

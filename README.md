@@ -20,7 +20,7 @@
 
 # Overview
 
-**SimpleFileDialog** C++ library provides a simple file selection dialog for Windows and Linux (tested on Ubuntu 22.04, 22.10, 24.04 and Windows 11). The library is used in projects where a simple file selection dialog is needed. On Linux the library shows the dialog using the **XDG Desktop Portal** FileChooser interface via **D-Bus**, the **zenity** application or the **kdialog** application. The library uses the C++17 standard. The D-Bus backend requires the optional **libsystemd** library on Linux (the **libsystemd-dev** package on Ubuntu). If it is not found at build time, the D-Bus backend is disabled. The library has no other third-party dependencies. **SimpleFileDialog.h** file includes the declaration of the **SimpleFileDialog** class. **SimpleFileDialog** class includes only one static method **dialog(...)**. The library is licensed under the **Apache 2.0** license.
+**SimpleFileDialog** C++ library provides a simple file selection dialog for Windows and Linux (tested on Ubuntu 22.04, 22.10, 24.04 and Windows 11). The library is used in projects where a simple file selection dialog is needed. On Linux the library shows the dialog using the **XDG Desktop Portal** FileChooser interface via **D-Bus**, the **zenity** application or the **kdialog** application. The library uses the C++17 standard. The D-Bus backend requires the optional **libsystemd** library on Linux. If it is not found at build time, the D-Bus backend is disabled. The library has no other third-party dependencies. **SimpleFileDialog.h** file includes the declaration of the **SimpleFileDialog** class. **SimpleFileDialog** class includes only one static method **dialog(...)**. The library is licensed under the **Apache 2.0** license.
 
 
 
@@ -96,6 +96,12 @@ int main(void)
 
 
 # Build and connect to your project
+
+On Linux, install the **pkg-config** and **libsystemd-dev** packages if you want D-Bus support (Ubuntu/Debian):
+
+```bash
+sudo apt install pkg-config libsystemd-dev
+```
 
 Typical commands to build **SimpleFileDialog** library:
 

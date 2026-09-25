@@ -238,23 +238,47 @@ bool zenityDialog(std::string& file)
     pclose(f);
     return true;
 }
+
+
+
+bool kdialogDialog(std::string& file)
+{
+    if (!checkProgram("kdialog"))
+        return false;
+
+    FILE* f = popen("kdialog --getopenfilename", "r");
+    if (f == nullptr)
+        return false;
+
+    // kdialog prints nothing if dialog cancelled.
+    char filename[4096];
+    if (fgets(filename, sizeof(filename), f) != nullptr)
+    {
+        file = filename;
+        if (!file.empty() && file.back() == '\n')
+            file.pop_back();
+    }
+    pclose(f);
+    return true;
+}
 }
 #endif // defined(linux) || defined(__linux) || defined(__linux__)
 
 
 
-std::string cr::utils::SimpleFileDialog::dialog()
+std::string cr::utils::SimpleFileDialog::dialog(const std::string title)
 {
 #if defined(linux) || defined(__linux) || defined(__linux__)
-#if SIMPLE_FILE_DIALOG_SD_BUS
-    // zenity is used only if portal is not available or failed to show
-    // dialog. If user cancelled portal dialog zenity is not shown.
     std::string file;
+#if SIMPLE_FILE_DIALOG_SD_BUS
     if (portalDialog(file))
         return file;
 #endif
     if (zenityDialog(file))
         return file;
+    if (kdialogDialog(file))
+        return file;
+    return "";
 #else
     IFileOpenDialog* pFileOpen = nullptr;
     HRESULT hr;

@@ -4,7 +4,7 @@
 
 # **SimpleFileDialog C++ library**
 
-**v1.0.5**
+**v1.1.0**
 
 
 
@@ -20,7 +20,7 @@
 
 # Overview
 
-**SimpleFileDialog** C++ library provides simple dialog to chose file in Windows and Linux (tested for Ubuntu 22.04, 22.10 and Windows 11). The library used in projects when simple file chose dialog needed. To provide dialog in Linux the library calls "**zenity**" application. The library uses C++17 standard and doesn't have third-party dependencies. **SimpleFileDialog.h** file includes declaration of **SimpleFileDialog** class. **SimpleFileDialog** class includes only one simple static method **dialog()**. The library is licensed under the **Apache 2.0** license.
+**SimpleFileDialog** C++ library provides a simple file selection dialog for Windows and Linux (tested on Ubuntu 22.04, 22.10, 24.04 and Windows 11). The library is used in projects where a simple file selection dialog is needed. On Linux the library shows the dialog using the **XDG Desktop Portal** FileChooser interface via **D-Bus**, the **zenity** application or the **kdialog** application. The library uses the C++17 standard. The D-Bus backend requires the optional **libsystemd** library on Linux (the **libsystemd-dev** package on Ubuntu). If it is not found at build time, the D-Bus backend is disabled. The library has no other third-party dependencies. **SimpleFileDialog.h** file includes the declaration of the **SimpleFileDialog** class. **SimpleFileDialog** class includes only one static method **dialog(...)**. The library is licensed under the **Apache 2.0** license.
 
 
 
@@ -35,6 +35,7 @@
 | 1.0.3   | 20.03.2024   | - Documentation updated.                       |
 | 1.0.4   | 17.05.2024   | - Documentation updated.                       |
 | 1.0.5   | 07.07.2024   | - CMake updated.                               |
+| 1.1.0   | 25.09.2026   | - Added **XDG Desktop Portal** (D-Bus) support for Linux.<br/>- Added **kdialog** support.<br/>- Added the ability to set a custom window title. |
 
 
 
@@ -58,7 +59,7 @@ test ------------------------------ Folder of the test application.
 
 # Class declaration
 
-**SimpleDileDialog** class declared in **SimpleFileDialog.h** file. Class declaration:
+**SimpleFileDialog** class declared in **SimpleFileDialog.h** file. Class declaration:
 
 ```cpp
 namespace cr
@@ -70,13 +71,13 @@ class SimpleFileDialog
 {
 public:
     /// @brief Dialog function.
-    static std::string dialog();
+    static std::string dialog(const std::string title = "Select a file");
 };
 }
 }
 ```
 
-**SimpleFileDialog** class includes only one static method **dialog()** which shows file chose dialog to user. The **dialog()** method returns string of file name. If file not chosen the method will return empty string **""**. Method used without **SimpleFileDialog** class instance. Example:
+**SimpleFileDialog** class includes only one static method **dialog(...)** which shows a file selection dialog to the user. The optional **title** parameter sets a custom window title on both Windows and Linux (default is **"Select a file"**). The method returns the selected file name. If no file is selected, the method returns an empty string **""**. The method is static, so no **SimpleFileDialog** class instance is required. Example:
 
 ```cpp
 #include <iostream>

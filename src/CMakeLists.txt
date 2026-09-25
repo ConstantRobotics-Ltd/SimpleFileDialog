@@ -44,3 +44,24 @@ if (NOT TARGET ${PROJECT_NAME})
 endif()
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
+
+
+################################################################################
+## LINK LIBRARIES
+## optional libsystemd (sd-bus) for XDG Desktop Portal file dialog in Linux,
+## SIMPLE_FILE_DIALOG_SD_BUS = 1 if found (zenity is fallback), 0 otherwise (only zenity)
+################################################################################
+if (UNIX)
+    find_package(PkgConfig)
+    if (PKG_CONFIG_FOUND)
+        pkg_check_modules(SYSTEMD IMPORTED_TARGET libsystemd)
+    endif()
+    if (SYSTEMD_FOUND)
+        message(STATUS "${PROJECT_NAME}: libsystemd ${SYSTEMD_VERSION} found, XDG Desktop Portal is used")
+        target_link_libraries(${PROJECT_NAME} PRIVATE PkgConfig::SYSTEMD)
+        target_compile_definitions(${PROJECT_NAME} PRIVATE SIMPLE_FILE_DIALOG_SD_BUS=1)
+    else()
+        message(WARNING "${PROJECT_NAME}: libsystemd not found, zenity is used")
+        target_compile_definitions(${PROJECT_NAME} PRIVATE SIMPLE_FILE_DIALOG_SD_BUS=0)
+    endif()
+endif()

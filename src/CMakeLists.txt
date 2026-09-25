@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.13)
 ## LIBRARY-PROJECT
 ## name and version
 ################################################################################
-project(SimpleFileDialog VERSION 1.0.5 LANGUAGES CXX)
+project(SimpleFileDialog VERSION 1.1.0 LANGUAGES CXX)
 
 
 
@@ -49,7 +49,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 ################################################################################
 ## LINK LIBRARIES
 ## optional libsystemd (sd-bus) for XDG Desktop Portal file dialog in Linux,
-## SIMPLE_FILE_DIALOG_SD_BUS = 1 if found (zenity is fallback), 0 otherwise (only zenity)
+## SIMPLE_FILE_DIALOG_SD_BUS = 1 if found (zenity and kdialog are fallback), 0 otherwise (only zenity)
 ################################################################################
 if (UNIX)
     find_package(PkgConfig)
@@ -61,7 +61,7 @@ if (UNIX)
         target_link_libraries(${PROJECT_NAME} PRIVATE PkgConfig::SYSTEMD)
         target_compile_definitions(${PROJECT_NAME} PRIVATE SIMPLE_FILE_DIALOG_SD_BUS=1)
     else()
-        message(WARNING "${PROJECT_NAME}: libsystemd not found, zenity is used")
+        message(WARNING "${PROJECT_NAME}: libsystemd not found, zenity and kdialog are used")
         target_compile_definitions(${PROJECT_NAME} PRIVATE SIMPLE_FILE_DIALOG_SD_BUS=0)
     endif()
 endif()

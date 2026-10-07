@@ -1,16 +1,24 @@
 #include <iostream>
-#include <chrono>
-#include <thread>
+#include <string>
 #include "SimpleFileDialog.h"
+#include "SimpleFileDialogVersion.h"
 
+
+
+/// Entry point: shows the file dialog and prints the chosen file.
 int main(void)
 {
+    std::cout << "SimpleFileDialog v" << SIMPLE_FILE_DIALOG_VERSION << std::endl;
+
     // Open file dialog.
-    std::string file = cr::utils::SimpleFileDialog::dialog();
-    std::cout << "File: " << file << std::endl;
-
-    std::this_thread::sleep_for(std::chrono::seconds(5));
-    return -1;
+    const std::string file{cr::utils::SimpleFileDialog::dialog()};
+    if (file.empty())
+    {
+        std::cout << "No file selected" << std::endl;
+    }
+    else
+    {
+        std::cout << "File: " << file << std::endl;
+    }
+    return 0;
 }
-
-

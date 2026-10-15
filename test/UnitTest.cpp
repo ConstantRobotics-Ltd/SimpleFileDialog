@@ -1,13 +1,11 @@
-// Automatic tests of the SimpleFileDialog library. The library source is
-// compiled into this test with test-only settings:
-// - Linux: SIMPLE_FILE_DIALOG_TRUSTED_DIRS is the directory of the fake zenity
-//   and kdialog programs which this test writes (shell scripts).
-// - Windows: SIMPLE_FILE_DIALOG_TEST_SHOW replaces the interactive
-//   IFileDialog::Show call, the COM life cycle is tested.
-// Exit code 0 if all checks passed, 1 otherwise.
 #include <algorithm>
+#include <array>
+#include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <string>
+#include <thread>
+#include <vector>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -19,7 +17,6 @@
 #include <windows.h>
 #include <objbase.h>
 #include <shobjidl.h>
-#include <thread>
 
 /// Replaces IFileDialog::Show in the library (defined below).
 HRESULT testShow(IFileOpenDialog* fileDialog);
@@ -33,8 +30,6 @@ HRESULT testShow(IFileOpenDialog* fileDialog);
 #include <csignal>
 #include <fstream>
 #include <iterator>
-#include <thread>
-#include <vector>
 #include <dirent.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -46,6 +41,12 @@ HRESULT testShow(IFileOpenDialog* fileDialog);
 #endif
 #endif
 
+// The library source is compiled into this test with test-only settings, the
+// library is not linked:
+// - Linux: SIMPLE_FILE_DIALOG_TRUSTED_DIRS is the directory of the fake zenity
+//   and kdialog programs (shell scripts) which the test writes and removes.
+// - Windows: SIMPLE_FILE_DIALOG_TEST_SHOW replaces the interactive
+//   IFileDialog::Show call, so the COM life cycle is tested.
 #include "SimpleFileDialog.cpp"
 
 
@@ -54,9 +55,9 @@ namespace
 {
 
 /// Number of checks.
-int checkCount{0};
+int g_checkCount{0};
 /// Number of failed checks.
-int failCount{0};
+int g_failCount{0};
 
 
 
@@ -68,10 +69,10 @@ int failCount{0};
  */
 void check(bool condition, const char* description, int line)
 {
-    ++checkCount;
+    ++g_checkCount;
     if (!condition)
     {
-        ++failCount;
+        ++g_failCount;
         std::cout << "FAILED (line " << line << "): " << description << std::endl;
     }
 }
@@ -90,6 +91,55 @@ namespace
 std::string runDialog(const std::string& title = "Test")
 {
     return cr::utils::SimpleFileDialog::dialog(title);
+}
+
+
+
+/// Run one group of checks and print the result: OK if no check of the group
+/// failed.
+void runTest(const char* title, void (*test)())
+{
+    std::cout << title << ":" << std::endl;
+    const int failedBefore{g_failCount};
+    test();
+    std::cout << (g_failCount == failedBefore ? "OK" : "ERROR") << std::endl
+              << std::endl;
+}
+
+
+
+/// State of the random generator of the tests. The tests use an own
+/// deterministic generator: the results are reproducible on all platforms.
+uint32_t g_randomState{20261015U};
+
+
+
+/// Get the next random number in [0, limit).
+int randomInt(int limit)
+{
+    g_randomState = g_randomState * 1664525U + 1013904223U;
+    return static_cast<int>((g_randomState >> 8) %
+                            static_cast<uint32_t>(limit));
+}
+
+
+
+/// Get a random text of up to maxSize pieces: ASCII text, control characters,
+/// bytes which are not UTF-8 and valid UTF-8 sequences of 2, 3 and 4 bytes.
+std::string randomText(int maxSize)
+{
+    static const std::vector<std::string> pieces{
+        "a", "Z", "0", "/", " ", "%", "\n", "\x1B", "\x7F", std::string(1, '\0'),
+        "\xFF", "\xC0\xAF", "\xE2\x82", "\xC3\xA9", "\xE2\x82\xAC",
+        "\xF0\x9F\x98\x80", "\xED\xA0\x80", "\xEF\xBF\xBE"};
+    std::string text;
+    const int count{randomInt(maxSize + 1)};
+    for (int i = 0; i < count; ++i)
+    {
+        const int index{randomInt(static_cast<int>(pieces.size()))};
+        text += pieces[static_cast<size_t>(index)];
+    }
+    return text;
 }
 
 
@@ -160,28 +210,79 @@ void testTitle()
 
 
 
+/// Check if a string has a control character.
+bool hasControlCharacter(const std::string& text)
+{
+    return std::any_of(text.begin(), text.end(), isControlCharacter);
+}
+
+
+
+#if defined(__linux__)
+/// Check if a string is valid UTF-8 (the rules of the title sanitizing).
+bool isValidUtf8(const std::string& text)
+{
+    for (size_t pos = 0; pos < text.size();)
+    {
+        const size_t size{utf8SequenceSize(text, pos)};
+        if (size == 0)
+        {
+            return false;
+        }
+        pos += size;
+    }
+    return true;
+}
+#endif
+
+
+
+/// Sanitized random titles: at most 256 bytes, no control characters, the
+/// sanitizing is idempotent, valid UTF-8 on Linux.
+void testTitleCampaign()
+{
+    int wrongTitles{0};
+    for (int i = 0; i < 20000; ++i)
+    {
+        const std::string result{sanitizeTitle(randomText(300))};
+        bool wrong{result.size() > MAX_TITLE_SIZE ||
+                   hasControlCharacter(result) ||
+                   sanitizeTitle(result) != result};
+#if defined(__linux__)
+        wrong = wrong || !isValidUtf8(result);
+#endif
+        if (wrong)
+        {
+            ++wrongTitles;
+        }
+    }
+    CHECK(wrongTitles == 0);
+}
+
+
+
 #if defined(_WIN32)
 /// Result returned by testShow.
-HRESULT showResult{S_OK};
+HRESULT g_showResult{S_OK};
 /// Number of testShow calls.
-int showCalls{0};
+int g_showCalls{0};
 /// Options of the dialog seen by testShow.
-FILEOPENDIALOGOPTIONS shownOptions{0};
-/// If TRUE, testShow keeps a reference to the dialog object in keptDialog.
-bool keepDialog{false};
+FILEOPENDIALOGOPTIONS g_shownOptions{0};
+/// If TRUE, testShow keeps a reference to the dialog object in g_keptDialog.
+bool g_keepDialog{false};
 /// Dialog object kept by testShow.
-IFileOpenDialog* keptDialog{nullptr};
+IFileOpenDialog* g_keptDialog{nullptr};
 
 
 
 /// Prepare testShow for a call.
 void setShow(HRESULT result, bool keep)
 {
-    showResult = result;
-    keepDialog = keep;
-    keptDialog = nullptr;
-    showCalls = 0;
-    shownOptions = 0;
+    g_showResult = result;
+    g_keepDialog = keep;
+    g_keptDialog = nullptr;
+    g_showCalls = 0;
+    g_shownOptions = 0;
 }
 
 
@@ -212,6 +313,47 @@ void testConversions()
     CHECK(isValidPath("C:\\video.mp4"));
     CHECK(!isValidPath(""));
     CHECK(!isValidPath("C:\\a\nb"));
+
+    // Random UTF-16 strings with paired and unpaired surrogates: a path which
+    // is converted is converted back to the same string, a path which is
+    // not converted has an unpaired surrogate.
+    int mismatches{0};
+    for (int i = 0; i < 20000; ++i)
+    {
+        std::wstring wide;
+        const int size{1 + randomInt(40)};
+        for (int j = 0; j < size; ++j)
+        {
+            const int unit{randomInt(3) == 0 ? 0xD800 + randomInt(0x800)
+                                             : 1 + randomInt(0xFFFF)};
+            wide += static_cast<wchar_t>(unit);
+        }
+        bool unpaired{false};
+        for (size_t j = 0; j < wide.size(); ++j)
+        {
+            const bool high{wide[j] >= 0xD800 && wide[j] <= 0xDBFF};
+            const bool low{wide[j] >= 0xDC00 && wide[j] <= 0xDFFF};
+            if (high && j + 1 < wide.size() && wide[j + 1] >= 0xDC00 &&
+                wide[j + 1] <= 0xDFFF)
+            {
+                ++j;
+            }
+            else if (high || low)
+            {
+                unpaired = true;
+            }
+        }
+        std::string utf8;
+        std::wstring back;
+        const bool converted{wideToUtf8(wide.c_str(), utf8)};
+        if (converted == unpaired ||
+            (converted && (!toWide(utf8, CP_UTF8, MB_ERR_INVALID_CHARS, back) ||
+                           back != wide)))
+        {
+            ++mismatches;
+        }
+    }
+    CHECK(mismatches == 0);
 }
 
 
@@ -227,8 +369,8 @@ void testCom()
     {
         setShow(HRESULT_FROM_WIN32(ERROR_CANCELLED), false);
         CHECK(runDialog("Title").empty());
-        CHECK(showCalls == 1);
-        CHECK((shownOptions & requiredOptions) == requiredOptions);
+        CHECK(g_showCalls == 1);
+        CHECK((g_shownOptions & requiredOptions) == requiredOptions);
         // COM is not initialized any more: any concurrency model can be set.
         const HRESULT initialized{CoInitializeEx(nullptr, COINIT_MULTITHREADED)};
         CHECK(initialized == S_OK);
@@ -245,11 +387,11 @@ void testCom()
         CHECK(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED) == S_OK);
         setShow(HRESULT_FROM_WIN32(ERROR_CANCELLED), true);
         CHECK(runDialog("Title").empty());
-        CHECK(showCalls == 1 && keptDialog != nullptr);
-        if (keptDialog != nullptr)
+        CHECK(g_showCalls == 1 && g_keptDialog != nullptr);
+        if (g_keptDialog != nullptr)
         {
             // The reference of the test is the last one.
-            CHECK(keptDialog->Release() == 0);
+            CHECK(g_keptDialog->Release() == 0);
         }
         CoUninitialize();
         const HRESULT initialized{CoInitializeEx(nullptr, COINIT_MULTITHREADED)};
@@ -267,10 +409,10 @@ void testCom()
         CHECK(CoInitializeEx(nullptr, COINIT_MULTITHREADED) == S_OK);
         setShow(HRESULT_FROM_WIN32(ERROR_CANCELLED), true);
         CHECK(runDialog("Title").empty());
-        CHECK(showCalls == 1 && keptDialog != nullptr);
-        if (keptDialog != nullptr)
+        CHECK(g_showCalls == 1 && g_keptDialog != nullptr);
+        if (g_keptDialog != nullptr)
         {
-            CHECK(keptDialog->Release() == 0);
+            CHECK(g_keptDialog->Release() == 0);
         }
         CHECK(CoInitializeEx(nullptr, COINIT_MULTITHREADED) == S_FALSE);
         CoUninitialize();
@@ -283,7 +425,7 @@ void testCom()
     {
         setShow(S_OK, false);
         CHECK(runDialog("Title").empty());
-        CHECK(showCalls == 1);
+        CHECK(g_showCalls == 1);
     }).join();
 
     // 5. Show fails.
@@ -291,7 +433,7 @@ void testCom()
     {
         setShow(E_FAIL, false);
         CHECK(runDialog("\xD0\x92\xD0\xB8\xD0\xB4\xD0\xB5\xD0\xBE \xE9 \n").empty());
-        CHECK(showCalls == 1);
+        CHECK(g_showCalls == 1);
     }).join();
 
     // 6. Many calls in one thread: no handle leak.
@@ -310,7 +452,7 @@ void testCom()
             runDialog();
         }
         CHECK(GetProcessHandleCount(GetCurrentProcess(), &handlesAfter) != 0);
-        CHECK(showCalls == 105);
+        CHECK(g_showCalls == 105);
         std::cout << "Handles before / after 100 calls: " << handlesBefore << " / "
                   << handlesAfter << std::endl;
         CHECK(handlesAfter <= handlesBefore + 2);
@@ -325,17 +467,17 @@ void testCom()
 #if defined(_WIN32)
 HRESULT testShow(IFileOpenDialog* fileDialog)
 {
-    ++showCalls;
-    if (FAILED(fileDialog->GetOptions(&shownOptions)))
+    ++g_showCalls;
+    if (FAILED(fileDialog->GetOptions(&g_shownOptions)))
     {
-        shownOptions = 0;
+        g_shownOptions = 0;
     }
-    if (keepDialog)
+    if (g_keepDialog)
     {
         fileDialog->AddRef();
-        keptDialog = fileDialog;
+        g_keptDialog = fileDialog;
     }
-    return showResult;
+    return g_showResult;
 }
 #endif
 
@@ -346,13 +488,13 @@ namespace
 {
 
 /// Directory of the fake dialog programs (the trusted directory of this test).
-const std::string trustedDir{SIMPLE_FILE_DIALOG_TRUSTED_DIRS};
+const std::string g_trustedDir{SIMPLE_FILE_DIALOG_TRUSTED_DIRS};
 /// Directory for the files of the fake programs and of the test.
-const std::string logDir{trustedDir + "_log"};
+const std::string g_logDir{g_trustedDir + "_log"};
 /// Directory not in the trusted list (found via PATH only).
-const std::string untrustedDir{trustedDir + "_untrusted"};
+const std::string g_untrustedDir{g_trustedDir + "_untrusted"};
 /// Result of the fallback program.
-const std::string kdialogFile{"/from/kdialog.mp4"};
+const std::string g_kdialogFile{"/from/kdialog.mp4"};
 
 
 
@@ -398,7 +540,7 @@ void writeProgram(const std::string& directory, const std::string& name,
 {
     const std::string path{directory + "/" + name};
     removeFile(path);
-    writeFile(path, "#!/bin/sh\necho called >> '" + logDir + "/" + name + ".calls'\n" +
+    writeFile(path, "#!/bin/sh\necho called >> '" + g_logDir + "/" + name + ".calls'\n" +
                     body + "\n");
     CHECK(chmod(path.c_str(), mode) == 0);
 }
@@ -409,8 +551,8 @@ void writeProgram(const std::string& directory, const std::string& name,
 void writeOutputProgram(const std::string& name, const std::string& output,
                         int exitCode)
 {
-    writeFile(logDir + "/" + name + ".out", output);
-    writeProgram(trustedDir, name, "cat '" + logDir + "/" + name + ".out'\nexit " +
+    writeFile(g_logDir + "/" + name + ".out", output);
+    writeProgram(g_trustedDir, name, "cat '" + g_logDir + "/" + name + ".out'\nexit " +
                                    std::to_string(exitCode));
 }
 
@@ -419,7 +561,7 @@ void writeOutputProgram(const std::string& name, const std::string& output,
 /// Number of calls of a fake program since the last reset.
 size_t callCount(const std::string& name)
 {
-    const std::string calls{readFile(logDir + "/" + name + ".calls")};
+    const std::string calls{readFile(g_logDir + "/" + name + ".calls")};
     return static_cast<size_t>(std::count(calls.begin(), calls.end(), '\n'));
 }
 
@@ -430,9 +572,9 @@ void resetPrograms()
 {
     for (const std::string name : {"zenity", "kdialog"})
     {
-        removeFile(trustedDir + "/" + name);
-        removeFile(logDir + "/" + name + ".calls");
-        removeFile(logDir + "/" + name + ".out");
+        removeFile(g_trustedDir + "/" + name);
+        removeFile(g_logDir + "/" + name + ".calls");
+        removeFile(g_logDir + "/" + name + ".out");
     }
 }
 
@@ -443,9 +585,70 @@ std::string runWithZenity(const std::string& output, int exitCode)
 {
     resetPrograms();
     writeOutputProgram("zenity", output, exitCode);
-    writeOutputProgram("kdialog", kdialogFile + "\n", 0);
+    writeOutputProgram("kdialog", g_kdialogFile + "\n", 0);
     return runDialog();
 }
+
+
+
+/**
+ * @brief Remove a directory with the files in it (the test creates no
+ * subdirectories).
+ * @param path Directory.
+ * @return TRUE if the directory does not exist any more.
+ */
+bool removeDirectory(const std::string& path)
+{
+    DIR* directory{opendir(path.c_str())};
+    if (directory == nullptr)
+    {
+        return errno == ENOENT;
+    }
+    bool removed{true};
+    while (const dirent* entry = readdir(directory))
+    {
+        const std::string name{entry->d_name};
+        if (name != "." && name != "..")
+        {
+            removed = unlink((path + "/" + name).c_str()) == 0 && removed;
+        }
+    }
+    closedir(directory);
+    return rmdir(path.c_str()) == 0 && removed;
+}
+
+
+
+/// Directory of the test: created empty, removed with its files at the end of
+/// the scope. A directory which can not be removed is a failed check.
+class TestDirectory
+{
+public:
+
+    /// Create the directory (an old one of an interrupted run is removed).
+    explicit TestDirectory(const std::string& path) : m_path(path)
+    {
+        static_cast<void>(removeDirectory(m_path));
+        CHECK(mkdir(m_path.c_str(), 0755) == 0);
+        CHECK(chmod(m_path.c_str(), 0755) == 0);
+    }
+
+    /// Remove the directory.
+    ~TestDirectory()
+    {
+        CHECK(removeDirectory(m_path));
+    }
+
+    TestDirectory(const TestDirectory&) = delete;
+    TestDirectory(TestDirectory&&) = delete;
+    TestDirectory& operator=(const TestDirectory&) = delete;
+    TestDirectory& operator=(TestDirectory&&) = delete;
+
+private:
+
+    /// Path of the directory.
+    const std::string m_path;
+};
 
 
 
@@ -558,7 +761,7 @@ void testLogic()
         CHECK(complete == (size <= MAX_OUTPUT_SIZE));
         CHECK(outputSize == std::min(size, MAX_OUTPUT_SIZE + 1));
     }
-    signal(SIGPIPE, oldPipeHandler);
+    static_cast<void>(signal(SIGPIPE, oldPipeHandler));
     OutputBuffer buffer{};
     size_t outputSize{0};
     CHECK(!readOutput(-1, buffer, outputSize));
@@ -581,7 +784,7 @@ void testLogic()
              "file:///tmp/a%1F", "file:///tmp/a%7F", "file:///tmp/a\nb", "file:///tmp/a\x7F",
              "file://evil.example.com/etc/passwd", "file://localhost.evil/x",
              "file://LOCALHOST/x", "file://user@localhost/x", "file://localhost", "file://",
-             "file:", "file:/tmp/x", "file:tmp/x", "FILE:///tmp/x", "http://localhost/x",
+             "file:", "file:/tmp/x", "file:tmp/x", "FILE:///tmp/x", "ftp://localhost/x",
              "/tmp/x", "", "file:///tmp/%", "file:///tmp/%4", "file:///tmp/%zz",
              "file:///tmp/%g0", "file:///tmp/%0g", "file:///tmp/%%41", "file:///tmp/a?b",
              "file:///tmp/a#b", "file:///tmp/%00",
@@ -620,41 +823,41 @@ void testTrustedPrograms()
     std::string path;
     CHECK(!findTrustedProgram("zenity", path));
     writeOutputProgram("zenity", "/x\n", 0);
-    CHECK(findTrustedProgram("zenity", path) && path == trustedDir + "/zenity");
+    CHECK(findTrustedProgram("zenity", path) && path == g_trustedDir + "/zenity");
 
     // Not executable, writable by the group or by others, not a regular file:
     // the program is not used, kdialog is the fallback.
     for (const mode_t mode : {mode_t{0644}, mode_t{0775}, mode_t{0757}, mode_t{0777}})
     {
         resetPrograms();
-        writeOutputProgram("kdialog", kdialogFile + "\n", 0);
-        writeProgram(trustedDir, "zenity", "echo /zenity.mp4", mode);
-        CHECK(runDialog() == kdialogFile);
+        writeOutputProgram("kdialog", g_kdialogFile + "\n", 0);
+        writeProgram(g_trustedDir, "zenity", "echo /zenity.mp4", mode);
+        CHECK(runDialog() == g_kdialogFile);
         CHECK(callCount("zenity") == 0);
     }
     resetPrograms();
-    CHECK(mkdir((trustedDir + "/zenity").c_str(), 0755) == 0);
-    writeOutputProgram("kdialog", kdialogFile + "\n", 0);
-    CHECK(runDialog() == kdialogFile);
-    CHECK(rmdir((trustedDir + "/zenity").c_str()) == 0);
+    CHECK(mkdir((g_trustedDir + "/zenity").c_str(), 0755) == 0);
+    writeOutputProgram("kdialog", g_kdialogFile + "\n", 0);
+    CHECK(runDialog() == g_kdialogFile);
+    CHECK(rmdir((g_trustedDir + "/zenity").c_str()) == 0);
 
     // A symbolic link to a protected program is used, to a writable one not.
     resetPrograms();
-    writeProgram(logDir, "linked", "echo /linked.mp4");
-    CHECK(symlink((logDir + "/linked").c_str(), (trustedDir + "/zenity").c_str()) == 0);
+    writeProgram(g_logDir, "linked", "echo /linked.mp4");
+    CHECK(symlink((g_logDir + "/linked").c_str(), (g_trustedDir + "/zenity").c_str()) == 0);
     CHECK(runDialog() == "/linked.mp4");
-    CHECK(chmod((logDir + "/linked").c_str(), 0777) == 0);
+    CHECK(chmod((g_logDir + "/linked").c_str(), 0777) == 0);
     CHECK(runDialog().empty());
-    removeFile(logDir + "/linked");
-    removeFile(logDir + "/linked.calls");
+    removeFile(g_logDir + "/linked");
+    removeFile(g_logDir + "/linked.calls");
 
     // A trusted directory writable by others is not used.
     resetPrograms();
     writeOutputProgram("zenity", "/zenity.mp4\n", 0);
-    CHECK(chmod(trustedDir.c_str(), 0777) == 0);
+    CHECK(chmod(g_trustedDir.c_str(), 0777) == 0);
     CHECK(runDialog().empty());
     CHECK(callCount("zenity") == 0);
-    CHECK(chmod(trustedDir.c_str(), 0755) == 0);
+    CHECK(chmod(g_trustedDir.c_str(), 0755) == 0);
     CHECK(runDialog() == "/zenity.mp4");
 }
 
@@ -674,7 +877,7 @@ void testPrograms()
     // Error exit codes: kdialog is the fallback.
     for (const int exitCode : {2, 5, 126, 127, 255})
     {
-        CHECK(runWithZenity("/tmp/x.mp4\n", exitCode) == kdialogFile);
+        CHECK(runWithZenity("/tmp/x.mp4\n", exitCode) == g_kdialogFile);
         CHECK(callCount("zenity") == 1 && callCount("kdialog") == 1);
     }
     // Exit code 0 without a valid path: failure, kdialog is the fallback.
@@ -687,7 +890,7 @@ void testPrograms()
              std::string("/") + std::string(PATH_MAX, 'a'),
              std::string("/") + std::string(100000, 'a') + "\n"})
     {
-        CHECK(runWithZenity(output, 0) == kdialogFile);
+        CHECK(runWithZenity(output, 0) == g_kdialogFile);
     }
     // Longest valid path, no trailing new line, special characters, non-UTF-8.
     const std::string longest{"/" + std::string(PATH_MAX - 2, 'a')};
@@ -704,8 +907,8 @@ void testPrograms()
 
     // Only kdialog, no program.
     resetPrograms();
-    writeOutputProgram("kdialog", kdialogFile + "\n", 0);
-    CHECK(runDialog() == kdialogFile);
+    writeOutputProgram("kdialog", g_kdialogFile + "\n", 0);
+    CHECK(runDialog() == g_kdialogFile);
     resetPrograms();
     writeOutputProgram("kdialog", "", 1);
     CHECK(runDialog().empty());
@@ -717,27 +920,46 @@ void testPrograms()
     for (const char* signalName : {"KILL", "TERM", "SEGV", "PIPE"})
     {
         resetPrograms();
-        writeOutputProgram("kdialog", kdialogFile + "\n", 0);
-        writeProgram(trustedDir, "zenity", "echo /tmp/x.mp4\nkill -" + std::string(signalName) +
+        writeOutputProgram("kdialog", g_kdialogFile + "\n", 0);
+        writeProgram(g_trustedDir, "zenity", "echo /tmp/x.mp4\nkill -" + std::string(signalName) +
                                            " $$\nexit 0");
-        CHECK(runDialog() == kdialogFile);
+        CHECK(runDialog() == g_kdialogFile);
     }
 
     // Endless output, SIGPIPE ignored by the program: stopped, no hang.
     resetPrograms();
-    writeOutputProgram("kdialog", kdialogFile + "\n", 0);
-    writeProgram(trustedDir, "zenity", "trap '' PIPE\nwhile :; do echo aaaaaaaaaaaaaaaa; done");
+    writeOutputProgram("kdialog", g_kdialogFile + "\n", 0);
+    writeProgram(g_trustedDir, "zenity", "trap '' PIPE\nwhile :; do echo aaaaaaaaaaaaaaaa; done");
     auto start = std::chrono::steady_clock::now();
-    CHECK(runDialog() == kdialogFile);
+    CHECK(runDialog() == g_kdialogFile);
     CHECK(std::chrono::steady_clock::now() - start < std::chrono::seconds(10));
 
     // Program which closes its output and exits later: the exit code is used.
     resetPrograms();
-    writeOutputProgram("kdialog", kdialogFile + "\n", 0);
-    writeProgram(trustedDir, "zenity", "echo /tmp/late.mp4\nexec 1>&-\nsleep 0.3\nexit 0");
+    writeOutputProgram("kdialog", g_kdialogFile + "\n", 0);
+    writeProgram(g_trustedDir, "zenity", "echo /tmp/late.mp4\nexec 1>&-\nsleep 0.3\nexit 0");
     CHECK(runDialog() == "/tmp/late.mp4");
-    writeProgram(trustedDir, "zenity", "echo /tmp/late.mp4\nexec 1>&-\nsleep 0.3\nexit 3");
-    CHECK(runDialog() == kdialogFile);
+    writeProgram(g_trustedDir, "zenity", "echo /tmp/late.mp4\nexec 1>&-\nsleep 0.3\nexit 3");
+    CHECK(runDialog() == g_kdialogFile);
+}
+
+
+
+/**
+ * @brief Get a signal mask from the text of /proc/PID/status.
+ * @param status Text with lines "Name:<tab>hexadecimal mask".
+ * @param name Name of the mask, for example "SigBlk".
+ * @return Mask or all bits set if the line does not exist.
+ */
+uint64_t signalMask(const std::string& status, const std::string& name)
+{
+    const std::string prefix{name + ":\t"};
+    const size_t pos{status.find(prefix)};
+    if (pos == std::string::npos)
+    {
+        return UINT64_MAX;
+    }
+    return std::strtoull(status.c_str() + pos + prefix.size(), nullptr, 16);
 }
 
 
@@ -745,43 +967,43 @@ void testPrograms()
 /// Tests of the arguments, environment, descriptors and signals of the program.
 void testProgramContext()
 {
-    const std::string argsFile{logDir + "/args.txt"};
-    const std::string envFile{logDir + "/env.txt"};
+    const std::string argsFile{g_logDir + "/args.txt"};
+    const std::string envFile{g_logDir + "/env.txt"};
 
     // Arguments: no shell, the title is one argument.
     resetPrograms();
-    writeProgram(trustedDir, "zenity", "for a in \"$@\"; do printf '[%s]\\n' \"$a\"; done > '" +
+    writeProgram(g_trustedDir, "zenity", "for a in \"$@\"; do printf '[%s]\\n' \"$a\"; done > '" +
                                        argsFile + "'\nexit 1");
-    const std::string hostile{"it's \"$(touch " + logDir + "/pwned1)\" `touch " + logDir +
-                              "/pwned2`; touch " + logDir + "/pwned3 | & > < * ~ \\"};
+    const std::string hostile{"it's \"$(touch " + g_logDir + "/pwned1)\" `touch " + g_logDir +
+                              "/pwned2`; touch " + g_logDir + "/pwned3 | & > < * ~ \\"};
     CHECK(runDialog(hostile).empty());
     CHECK(readFile(argsFile) == "[--file-selection]\n[--title=" + hostile + "]\n");
-    CHECK(!fileExists(logDir + "/pwned1") && !fileExists(logDir + "/pwned2") &&
-          !fileExists(logDir + "/pwned3"));
-    CHECK(runDialog("--help\nline\ttab\x1B") == "");
+    CHECK(!fileExists(g_logDir + "/pwned1") && !fileExists(g_logDir + "/pwned2") &&
+          !fileExists(g_logDir + "/pwned3"));
+    CHECK(runDialog("--help\nline\ttab\x1B").empty());
     CHECK(readFile(argsFile) == "[--file-selection]\n[--title=--help line tab ]\n");
-    CHECK(runDialog(std::string(1000, 't')) == "");
+    CHECK(runDialog(std::string(1000, 't')).empty());
     CHECK(readFile(argsFile) == "[--file-selection]\n[--title=" + std::string(256, 't') + "]\n");
-    CHECK(runDialog("") == "");
+    CHECK(runDialog("").empty());
     CHECK(readFile(argsFile) == "[--file-selection]\n[--title=]\n");
     resetPrograms();
-    writeProgram(trustedDir, "kdialog", "for a in \"$@\"; do printf '[%s]\\n' \"$a\"; done > '" +
+    writeProgram(g_trustedDir, "kdialog", "for a in \"$@\"; do printf '[%s]\\n' \"$a\"; done > '" +
                                         argsFile + "'\nexit 1");
-    CHECK(runDialog("K title") == "");
+    CHECK(runDialog("K title").empty());
     CHECK(readFile(argsFile) == "[--getopenfilename]\n[--title=K title]\n");
 
     // Hostile PATH: the program in PATH is not used.
-    CHECK(mkdir(untrustedDir.c_str(), 0755) == 0 || errno == EEXIST);
-    writeProgram(untrustedDir, "zenity", "touch '" + logDir + "/evil'\necho /evil.mp4");
-    writeProgram(untrustedDir, "kdialog", "touch '" + logDir + "/evil'\necho /evil.mp4");
-    const std::string oldPath{getenv("PATH") != nullptr ? getenv("PATH") : ""};
-    CHECK(setenv("PATH", (untrustedDir + ":" + oldPath).c_str(), 1) == 0);
+    writeProgram(g_untrustedDir, "zenity", "touch '" + g_logDir + "/evil'\necho /evil.mp4");
+    writeProgram(g_untrustedDir, "kdialog", "touch '" + g_logDir + "/evil'\necho /evil.mp4");
+    const char* currentPath{getenv("PATH")};
+    const std::string oldPath{currentPath != nullptr ? currentPath : ""};
+    CHECK(setenv("PATH", (g_untrustedDir + ":" + oldPath).c_str(), 1) == 0);
     resetPrograms();
     CHECK(runDialog().empty());
-    CHECK(!fileExists(logDir + "/evil"));
+    CHECK(!fileExists(g_logDir + "/evil"));
     writeOutputProgram("zenity", "/trusted.mp4\n", 0);
     CHECK(runDialog() == "/trusted.mp4");
-    CHECK(!fileExists(logDir + "/evil"));
+    CHECK(!fileExists(g_logDir + "/evil"));
 
     // Environment: allowlist and fixed PATH.
     const std::vector<std::pair<std::string, std::string>> variables{
@@ -795,7 +1017,7 @@ void testProgramContext()
         CHECK(setenv(variable.first.c_str(), variable.second.c_str(), 1) == 0);
     }
     resetPrograms();
-    writeProgram(trustedDir, "zenity", "env > '" + envFile + "'\necho /env.mp4");
+    writeProgram(g_trustedDir, "zenity", "env > '" + envFile + "'\necho /env.mp4");
     CHECK(runDialog() == "/env.mp4");
     const std::string environment{readFile(envFile)};
     for (const char* line : {"PATH=/usr/bin:/bin:/usr/local/bin\n", "DISPLAY=:77\n",
@@ -806,7 +1028,7 @@ void testProgramContext()
     }
     for (const char* name : {"LD_PRELOAD", "LD_LIBRARY_PATH", "BASH_ENV", "\nENV=",
                              "GTK_MODULES", "QT_PLUGIN_PATH", "SFD_SECRET", "evil",
-                             untrustedDir.c_str()})
+                             g_untrustedDir.c_str()})
     {
         CHECK(environment.find(name) == std::string::npos);
     }
@@ -822,13 +1044,13 @@ void testProgramContext()
     const int notCloseOnExec{open("/dev/null", O_RDONLY)};
     CHECK(notCloseOnExec > 2);
     resetPrograms();
-    writeProgram(trustedDir, "zenity",
-                 "ls /proc/self/fd > '" + logDir + "/fds.txt'\n"
-                 "readlink /proc/self/fd/0 > '" + logDir + "/stdin.txt'\n"
-                 "readlink /proc/self/fd/2 > '" + logDir + "/stderr.txt'\n"
-                 "cat > '" + logDir + "/input.txt'\n"
+    writeProgram(g_trustedDir, "zenity",
+                 "ls /proc/self/fd > '" + g_logDir + "/fds.txt'\n"
+                 "readlink /proc/self/fd/0 > '" + g_logDir + "/stdin.txt'\n"
+                 "readlink /proc/self/fd/2 > '" + g_logDir + "/stderr.txt'\n"
+                 "cat > '" + g_logDir + "/input.txt'\n"
                  "echo noise >&2\n"
-                 "grep -E '^Sig(Blk|Ign)' /proc/self/status > '" + logDir + "/signals.txt'\n"
+                 "grep -E '^Sig(Blk|Ign)' /proc/self/status > '" + g_logDir + "/signals.txt'\n"
                  "echo /fd.mp4");
     // The process has a pipe as standard input which is never closed: if the
     // program inherited it, "cat" would wait forever.
@@ -845,33 +1067,213 @@ void testProgramContext()
     CHECK(pthread_sigmask(SIG_BLOCK, &blocked, &oldMask) == 0);
     CHECK(runDialog() == "/fd.mp4");
     CHECK(pthread_sigmask(SIG_SETMASK, &oldMask, nullptr) == 0);
-    signal(SIGPIPE, oldPipeHandler);
+    static_cast<void>(signal(SIGPIPE, oldPipeHandler));
     CHECK(dup2(savedInput, STDIN_FILENO) == STDIN_FILENO);
     close(savedInput);
     close(inputPipe[0]);
     close(inputPipe[1]);
     close(notCloseOnExec);
 #if defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 34))
-    CHECK(readFile(logDir + "/fds.txt") == "0\n1\n2\n3\n");
+    CHECK(readFile(g_logDir + "/fds.txt") == "0\n1\n2\n3\n");
 #endif
-    CHECK(readFile(logDir + "/stdin.txt") == "/dev/null\n");
-    CHECK(readFile(logDir + "/stderr.txt") == "/dev/null\n");
-    CHECK(readFile(logDir + "/input.txt").empty());
-    CHECK(readFile(logDir + "/signals.txt") ==
-          "SigBlk:\t0000000000000000\nSigIgn:\t0000000000000000\n");
+    CHECK(readFile(g_logDir + "/stdin.txt") == "/dev/null\n");
+    CHECK(readFile(g_logDir + "/stderr.txt") == "/dev/null\n");
+    CHECK(readFile(g_logDir + "/input.txt").empty());
+    // No signal is blocked and no standard signal (1 - 31) is ignored. The
+    // signals 32 and above are not compared for ignoring: glibc before 2.38
+    // ignores its two internal signals (32, 33) in the started program and
+    // an emulator (qemu-user) ignores two others.
+    const std::string signals{readFile(g_logDir + "/signals.txt")};
+    CHECK(signalMask(signals, "SigBlk") == 0);
+    CHECK((signalMask(signals, "SigIgn") & 0x7FFFFFFFU) == 0);
+}
+
+
+
+#if SIMPLE_FILE_DIALOG_SD_BUS
+/// Mutate a string: replace random bytes (a part of the bytes given in
+/// per mille), cut it or repeat a part of it.
+std::string mutate(const std::string& text, int perMille)
+{
+    std::string result{text};
+    for (char& byte : result)
+    {
+        if (randomInt(1000) < perMille)
+        {
+            byte = static_cast<char>(randomInt(256));
+        }
+    }
+    const int kind{randomInt(4)};
+    if (kind == 0 && !result.empty())
+    {
+        result.resize(static_cast<size_t>(randomInt(
+                static_cast<int>(result.size()) + 1)));
+    }
+    else if (kind == 1 && !result.empty())
+    {
+        const size_t from{static_cast<size_t>(randomInt(
+                static_cast<int>(result.size())))};
+        result.insert(from, result.substr(from));
+    }
+    return result;
+}
+#endif
+
+
+
+/// Random paths: the result of isValidPath is the same as of an independent
+/// check.
+void checkPathCampaign()
+{
+    int wrongPaths{0};
+    for (int i = 0; i < 20000; ++i)
+    {
+        std::string path{"/" + randomText(60)};
+        if (randomInt(10) == 0)
+        {
+            path.erase(0, 1);
+        }
+        const bool expected{!path.empty() && path.front() == '/' &&
+                            path.size() < MAX_PATH_SIZE &&
+                            !hasControlCharacter(path)};
+        if (isValidPath(path) != expected)
+        {
+            ++wrongPaths;
+        }
+    }
+    CHECK(wrongPaths == 0);
+}
+
+
+
+/// Random environments: PATH is fixed, every other entry is allowed and was in
+/// the given environment, nothing which loads code is passed.
+void checkEnvironmentCampaign()
+{
+    const std::vector<std::string> names{
+        "DISPLAY", "LD_PRELOAD", "GTK_MODULES", "XDG_X", "LC_ALL", "PATH",
+        "QT_PLUGIN_PATH", "HOME", "SECRET", "", "LD_LIBRARY_PATH", "GTK_THEME"};
+    int wrongEnvironments{0};
+    for (int i = 0; i < 5000; ++i)
+    {
+        std::vector<std::string> entries;
+        const int count{randomInt(9)};
+        for (int j = 0; j < count; ++j)
+        {
+            std::string value{randomText(8)};
+            value.erase(std::remove(value.begin(), value.end(), '\0'),
+                        value.end());
+            const int index{randomInt(static_cast<int>(names.size()))};
+            entries.push_back(names[static_cast<size_t>(index)] +
+                              (randomInt(5) == 0 ? "" : "=") + value);
+        }
+        std::vector<const char*> environment;
+        for (const std::string& entry : entries)
+        {
+            environment.push_back(entry.c_str());
+        }
+        environment.push_back(nullptr);
+        const std::vector<std::string> filtered{
+                filterEnvironment(environment.data())};
+        bool wrong{filtered.empty() || filtered.front() != CHILD_PATH};
+        for (size_t j = 1; j < filtered.size(); ++j)
+        {
+            const std::string& entry = filtered[j];
+            wrong = wrong || !isAllowedVariable(entry) ||
+                    std::find(entries.begin(), entries.end(), entry) ==
+                    entries.end() || entry.rfind("PATH=", 0) == 0 ||
+                    entry.rfind("LD_", 0) == 0 ||
+                    entry.rfind("GTK_MODULES=", 0) == 0 ||
+                    entry.rfind("QT_PLUGIN_PATH=", 0) == 0;
+        }
+        if (wrong)
+        {
+            ++wrongEnvironments;
+        }
+    }
+    CHECK(wrongEnvironments == 0);
+}
+
+
+
+#if SIMPLE_FILE_DIALOG_SD_BUS
+/// Percent decode the path of a file URI which was accepted (the part from the
+/// first slash after "file://").
+std::string decodePath(const std::string& uri)
+{
+    std::string decoded;
+    const size_t start{uri.find('/', 7)};
+    for (size_t pos = start; start != std::string::npos && pos < uri.size();
+         ++pos)
+    {
+        if (uri[pos] == '%' && uri.size() - pos >= 3)
+        {
+            decoded += static_cast<char>(std::strtol(
+                    uri.substr(pos + 1, 2).c_str(), nullptr, 16));
+            pos += 2;
+        }
+        else
+        {
+            decoded += uri[pos];
+        }
+    }
+    return decoded;
+}
+
+
+
+/// Random file URIs: valid URIs with random bytes replaced (0.1, 0.5 and 2 %),
+/// cut and with a repeated part. An accepted URI gives a valid path equal to
+/// the percent decoded one, a rejected URI does not change the path.
+void checkUriCampaign()
+{
+    const std::vector<std::string> uris{
+        "file:///tmp/a%20b.mp4", "file://localhost/home/user/video%C3%A9.mp4",
+        "file:///", "file:///tmp/%FF%FE/x", "file:///a/b/c/d/e/f/g.mp4"};
+    const std::array<int, 3> perMilles{1, 5, 20};
+    int wrongUris{0};
+    for (size_t i = 0; i < 60000; ++i)
+    {
+        const std::string uri{
+                mutate(uris[i % uris.size()], perMilles[i % perMilles.size()])};
+        std::string path{"unchanged"};
+        if (!uriToPath(uri, path))
+        {
+            wrongUris += path == "unchanged" ? 0 : 1;
+            continue;
+        }
+        wrongUris += (isValidPath(path) && path == decodePath(uri)) ? 0 : 1;
+    }
+    CHECK(wrongUris == 0);
+}
+#endif
+
+
+
+/// Damaged data campaign: deterministic random and mutated input of every
+/// parser of untrusted data (path, environment, file URI; the title has its
+/// own campaign). A failure of a check is reported once per group with the
+/// number of wrong results.
+void testCorruption()
+{
+    checkPathCampaign();
+    checkEnvironmentCampaign();
+#if SIMPLE_FILE_DIALOG_SD_BUS
+    checkUriCampaign();
+#endif
 }
 
 
 
 /// Number of SIGUSR1 signals received.
-std::atomic<int> signalCount{0};
+std::atomic<int> g_signalCount{0};
 
 
 
 /// Handler of SIGUSR1 (installed without SA_RESTART: interrupts system calls).
 void onSignal(int)
 {
-    ++signalCount;
+    ++g_signalCount;
 }
 
 
@@ -889,7 +1291,7 @@ void testRobustness()
     struct sigaction oldAction{};
     CHECK(sigaction(SIGUSR1, &action, &oldAction) == 0);
     resetPrograms();
-    writeProgram(trustedDir, "zenity", "sleep 0.5\necho /slow.mp4");
+    writeProgram(g_trustedDir, "zenity", "sleep 0.5\necho /slow.mp4");
     std::atomic<bool> running{true};
     const pthread_t mainThread{pthread_self()};
     std::thread sender([&running, mainThread]()
@@ -904,12 +1306,12 @@ void testRobustness()
     running = false;
     sender.join();
     CHECK(sigaction(SIGUSR1, &oldAction, nullptr) == 0);
-    std::cout << "Signals during the dialog: " << signalCount << std::endl;
-    CHECK(signalCount > 10);
+    std::cout << "Signals during the dialog: " << g_signalCount << std::endl;
+    CHECK(g_signalCount > 10);
 
     // Calls from several threads at the same time.
     resetPrograms();
-    writeProgram(trustedDir, "zenity", "echo \"/thread/$$.mp4\"");
+    writeProgram(g_trustedDir, "zenity", "echo \"/thread/$$.mp4\"");
     std::atomic<int> threadResults{0};
     std::vector<std::thread> threads;
     for (int i = 0; i < 8; ++i)
@@ -939,7 +1341,7 @@ void testRobustness()
     writeOutputProgram("zenity", "/tmp/x.mp4\n", 0);
     const auto oldChildHandler = signal(SIGCHLD, SIG_IGN);
     CHECK(runDialog().empty());
-    signal(SIGCHLD, oldChildHandler);
+    static_cast<void>(signal(SIGCHLD, oldChildHandler));
     CHECK(runDialog() == "/tmp/x.mp4");
 
     // No leaked descriptors, no zombie processes.
@@ -960,27 +1362,33 @@ int main()
     const std::string title;
     static_assert(noexcept(cr::utils::SimpleFileDialog::dialog(title)),
                   "dialog must not throw");
-    testTitle();
+    runTest("Dialog title", testTitle);
+    runTest("Random titles", testTitleCampaign);
 #if defined(_WIN32)
-    testConversions();
-    testCom();
+    runTest("Conversions", testConversions);
+    runTest("COM life cycle", testCom);
 #elif defined(__linux__)
     // Watchdog: a hang ends the test with SIGALRM.
     alarm(300);
     // No real portal: the D-Bus session bus can not be reached.
     CHECK(setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent/simplefiledialog", 1) == 0);
-    CHECK(mkdir(trustedDir.c_str(), 0755) == 0 || errno == EEXIST);
-    CHECK(mkdir(logDir.c_str(), 0755) == 0 || errno == EEXIST);
-    CHECK(chmod(trustedDir.c_str(), 0755) == 0 && chmod(logDir.c_str(), 0755) == 0);
-    testLogic();
-    testTrustedPrograms();
-    testPrograms();
-    testProgramContext();
-    testRobustness();
+    {
+        // The directories of the fake programs and of the files of the test
+        // are removed at the end of the scope.
+        const TestDirectory trustedDirectory{g_trustedDir};
+        const TestDirectory logDirectory{g_logDir};
+        const TestDirectory untrustedDirectory{g_untrustedDir};
+        runTest("Path, environment, output, URI", testLogic);
+        runTest("Damaged data campaign", testCorruption);
+        runTest("Trusted directories", testTrustedPrograms);
+        runTest("Dialog programs", testPrograms);
+        runTest("Program context", testProgramContext);
+        runTest("Interrupted calls, threads, leaks", testRobustness);
+    }
 #else
     CHECK(runDialog().empty());
 #endif
 
-    std::cout << "Checks: " << checkCount << ", failed: " << failCount << std::endl;
-    return failCount == 0 ? 0 : 1;
+    std::cout << "Checks: " << g_checkCount << ", failed: " << g_failCount << std::endl;
+    return g_failCount == 0 ? 0 : 1;
 }

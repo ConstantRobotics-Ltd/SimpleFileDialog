@@ -190,6 +190,10 @@ constexpr size_t MAX_WIDE_PATH_SIZE{32767};
 /// Releases a COM interface.
 struct ComReleaser
 {
+    /**
+     * @brief Release the interface.
+     * @param object Interface, not nullptr.
+     */
     void operator()(IUnknown* object) const
     {
         object->Release();
@@ -201,6 +205,10 @@ struct ComReleaser
 /// Frees memory allocated by COM.
 struct CoTaskMemDeleter
 {
+    /**
+     * @brief Free the memory (nullptr is allowed).
+     * @param memory Memory allocated by COM.
+     */
     void operator()(wchar_t* memory) const
     {
         CoTaskMemFree(memory);
@@ -235,7 +243,9 @@ public:
     }
 
     ComScope(const ComScope&) = delete;
+    ComScope(ComScope&&) = delete;
     ComScope& operator=(const ComScope&) = delete;
+    ComScope& operator=(ComScope&&) = delete;
 
     /**
      * @brief Check if COM can be used.
@@ -471,7 +481,7 @@ using OutputBuffer = std::array<char, MAX_OUTPUT_SIZE + 1>;
 
 
 /// Result of a dialog backend.
-enum class DialogStatus
+enum class DialogStatus : std::uint8_t
 {
     /// The user chose a file, the path is valid.
     CHOSEN,
@@ -793,6 +803,7 @@ DialogStatus runDialogProgram(const std::string& name,
     argumentStrings.insert(argumentStrings.end(), arguments.begin(),
                            arguments.end());
     std::vector<char*> argv;
+    argv.reserve(argumentStrings.size() + 1);
     for (std::string& argument : argumentStrings)
     {
         argv.push_back(argument.data());
@@ -801,6 +812,7 @@ DialogStatus runDialogProgram(const std::string& name,
 
     std::vector<std::string> environmentStrings{filterEnvironment(environ)};
     std::vector<char*> envp;
+    envp.reserve(environmentStrings.size() + 1);
     for (std::string& variable : environmentStrings)
     {
         envp.push_back(variable.data());
@@ -877,7 +889,7 @@ constexpr size_t MAX_URI_SIZE{sizeof("file://localhost") - 1 +
                               3 * MAX_PATH_SIZE};
 
 /// Counter of the portal requests (unique request tokens).
-std::atomic<uint32_t> requestCounter{0};
+std::atomic<uint32_t> g_requestCounter{0};
 
 
 
@@ -901,6 +913,10 @@ struct PortalRequest
 /// Closes a bus connection.
 struct BusDeleter
 {
+    /**
+     * @brief Flush, close and release the connection.
+     * @param bus Connection.
+     */
     void operator()(sd_bus* bus) const
     {
         sd_bus_flush_close_unref(bus);
@@ -912,6 +928,10 @@ struct BusDeleter
 /// Releases a bus message.
 struct MessageDeleter
 {
+    /**
+     * @brief Release the message (nullptr is allowed).
+     * @param message Message.
+     */
     void operator()(sd_bus_message* message) const
     {
         sd_bus_message_unref(message);
@@ -1042,8 +1062,12 @@ bool readUris(sd_bus_message* message, std::string& uri, size_t& count)
             uri = item;
         }
     }
-    return sd_bus_message_exit_container(message) >= 0 &&
-           sd_bus_message_exit_container(message) >= 0;
+    // Leave the array of strings and then the variant.
+    if (sd_bus_message_exit_container(message) < 0)
+    {
+        return false;
+    }
+    return sd_bus_message_exit_container(message) >= 0;
 }
 
 
@@ -1256,7 +1280,7 @@ DialogStatus portalDialog(const std::string& title, std::string& file)
     sender.erase(0, 1);
     std::replace(sender.begin(), sender.end(), '.', '_');
     const std::string token{"simplefiledialog" +
-                            std::to_string(++requestCounter)};
+                            std::to_string(++g_requestCounter)};
     const std::string expectedHandle{std::string(PORTAL_PATH) + "/request/" +
                                      sender + "/" + token};
 
@@ -1275,7 +1299,7 @@ DialogStatus portalDialog(const std::string& title, std::string& file)
     sd_bus_message* rawReply{nullptr};
     const int called{sd_bus_call_method(
         bus.get(), PORTAL_NAME, PORTAL_PATH, "org.freedesktop.portal.FileChooser",
-        "OpenFile", nullptr, &rawReply, "ssa{sv}", "", title.c_str(), 1u,
+        "OpenFile", nullptr, &rawReply, "ssa{sv}", "", title.c_str(), 1U,
         "handle_token", "s", token.c_str())};
     const std::unique_ptr<sd_bus_message, MessageDeleter> reply{rawReply};
     const char* handle{nullptr};

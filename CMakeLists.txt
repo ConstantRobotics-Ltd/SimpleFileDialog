@@ -14,7 +14,7 @@ project(SimpleFileDialog LANGUAGES CXX)
 ## SETTINGS
 ## basic project settings before use
 ################################################################################
-# If this project is used as a submodule, the variable should be overridden
+# If this project is used as a sub-repository, the variable should be overridden
 # to "OFF" in the top-level application (to disable forced cache rewriting)
 option(${PARENT}_SUBMODULE_CACHE_OVERWRITE "Enable forced cache rewriting" ON)
 if (${PARENT}_SUBMODULE_CACHE_OVERWRITE)

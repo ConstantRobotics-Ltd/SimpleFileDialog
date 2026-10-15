@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.13)
 ## LIBRARY-PROJECT
 ## name and version
 ################################################################################
-project(SimpleFileDialog VERSION 1.2.0 LANGUAGES CXX)
+project(SimpleFileDialog VERSION 1.2.1 LANGUAGES CXX)
 
 
 
@@ -52,7 +52,8 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 ## LINK LIBRARIES
 ## Windows: COM libraries. Linux: optional libsystemd (sd-bus) for the XDG
 ## Desktop Portal file dialog, SIMPLE_FILE_DIALOG_SD_BUS = 1 if found (zenity
-## and kdialog are fallback), 0 otherwise (only zenity and kdialog)
+## and kdialog are fallback), 0 otherwise (only zenity and kdialog).
+## Then compiler warnings and exploit mitigation options of the target
 ################################################################################
 if (WIN32)
     target_link_libraries(${PROJECT_NAME} PRIVATE ole32 uuid)
@@ -71,12 +72,6 @@ elseif (UNIX)
     endif()
 endif()
 
-
-
-################################################################################
-## COMPILER OPTIONS
-## warnings and exploit mitigation (EU CRA Annex I)
-################################################################################
 include(CheckCXXCompilerFlag)
 if (MSVC)
     # All warnings, standard conformance, security checks, stack cookies and
@@ -93,6 +88,9 @@ else()
         -Woverloaded-virtual -Wdouble-promotion -Wimplicit-fallthrough
         -Wmissing-declarations -Wundef -Wextra-semi
         -Wzero-as-null-pointer-constant)
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${PROJECT_NAME} PRIVATE -Wdocumentation)
+    endif()
     if (NOT WIN32)
         # Stack protector and hardened libc calls (optimized builds only)
         target_compile_options(${PROJECT_NAME} PRIVATE -fstack-protector-strong
